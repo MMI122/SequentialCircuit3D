@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Transitions</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="x-input">Input (x):</label>
+        <select id="x-input">
+            <option value="0">0</option>
+            <option value="1">1</option>
+        </select>
+        <button id="clock-pulse">Clock Pulse</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], arrows = [], movingBall;
+        let currentStateIndex = 0;
+        let statePositions = [
+            { x: 0, y: 4, z: 0, state: '000' },
+            { x: 3, y: 3, z: 0, state: '001' },
+            { x: 4, y: 0, z: 0, state: '010' },
+            { x: 3, y: -3, z: 0, state: '011' },
+            { x: 0, y: -4, z: 0, state: '100' },
+            { x: -3, y: -3, z: 0, state: '101' },
+            { x: -4, y: 0, z: 0, state: '110' },
+            { x: -3, y: 3, z: 0, state: '111' }
+        ];
+
+        // Transition sequences based on input x
+        const transitions = {
+            0: [0, 2, 1, 3, 4, 6, 4, 7],
+            1: [0, 1, 3, 2, 7, 5, 7, 5, 0]
+        };
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            let ambientLight = new THREE.AmbientLight(0x404040, 1);  // Ambient light
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);  // Directional light
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+
+            // Create the states as 3D spheres (balls)
+            statePositions.forEach((state, index) => {
+                let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                let material = new THREE.MeshStandardMaterial({
+                    color: getStateColor(state.state),
+                    transparent: true,
+                    opacity: 0.7
+                });
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(state.x, state.y, state.z);
+                sphere.userData = { state: state.state }; // Attach the state label
+                scene.add(sphere);
+                balls.push(sphere);  // Keep track of all balls
+                createStateLabel(state.x, state.y, state.state);  // Add state labels
+            });
+
+            // Create the moving ball named 'y'
+            createMovingBall();
+
+            // Set up the camera
+            camera.position.z = 12;
+
+            // Add event listeners
+            document.getElementById('clock-pulse').addEventListener('click', handleClockPulse);
+
+            // Render the scene
+            animate();
+        }
+
+        // Get color for the state (change according to your need)
+        function getStateColor(state) {
+            switch (state) {
+                case '000': return 0x00ff00;
+                case '001': return 0x0000ff;
+                case '010': return 0xff0000;
+                case '011': return 0xffff00;
+                case '100': return 0x00ffff;
+                case '101': return 0xff00ff;
+                case '110': return 0xffffff;
+                case '111': return 0xffa500;
+                default: return 0x808080;
+            }
+        }
+
+        // Create the state label (write the state name directly on the ball)
+        function createStateLabel(x, y, state) {
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(state, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set(x - 0.2, y + 0.3, 0);
+                scene.add(textMesh);
+            });
+        }
+
+        // Create the moving ball 'y'
+        function createMovingBall() {
+            let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            let material = new THREE.MeshStandardMaterial({
+                color: 0xff0000, // Initial color for the moving ball (red)
+                transparent: true,
+                opacity: 0.7
+            });
+            movingBall = new THREE.Mesh(geometry, material);
+            movingBall.position.set(0, 0, 0);  // Set initial position to the first state
+            scene.add(movingBall);
+
+            // Add label 'y' to the moving ball
+            createStateLabel(6, 0, 'y');
+        }
+
+        // Create an arrow helper to show the transition
+        function createArrowHelper(start, end, color) {
+            let direction = new THREE.Vector3().subVectors(end, start).normalize();
+            let length = start.distanceTo(end);
+            let arrowHelper = new THREE.ArrowHelper(direction, start, length, color);
+            scene.add(arrowHelper);
+            arrows.push(arrowHelper);
+        }
+
+        // Handle clock pulse to move the ball along the specified states
+        function handleClockPulse() {
+            let xInput = parseInt(document.getElementById('x-input').value);
+            let path = transitions[xInput];
+            let arrowColor = xInput === 0 ? 0xff0000 : 0xffff00; // Red for x=0, Yellow for x=1
+
+            if (!path || path.length === 0) {
+                alert('No transitions defined for this input!');
+                return;
+            }
+
+            let currentIndex = 0;
+
+            function moveToNextState() {
+                if (currentIndex >= path.length) return;
+
+                let targetState = balls[path[currentIndex]];
+                let { x, y, z } = targetState.position;
+
+                // Create an arrow from the current position to the next state
+                if (currentIndex > 0) {
+                    let previousState = balls[path[currentIndex - 1]];
+                    createArrowHelper(previousState.position, targetState.position, arrowColor);
+                }
+
+                movingBall.position.set(x, y, camera.position.z - 5);
+
+                // Change the color of the moving ball based on the input and state
+                if (xInput === 1 && path[currentIndex] === 7) {
+                    movingBall.material.color.set(0xffff00); // Yellow for x=1 and state 7
+                } else {
+                    movingBall.material.color.set(0xff0000); // Red otherwise
+                }
+
+                currentIndex++;
+
+                if (currentIndex < path.length) {
+                    setTimeout(moveToNextState, 500); // Delay between moves
+                }
+            }
+
+            moveToNextState();
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Call the init function to set up the scene
+        init();
+    </script>
+</body>
+</html>
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Clock and X Selector</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        button, select {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <label for="x-value">Select X Value:</label>
+        <select id="x-value">
+            <option value="0">0</option>
+            <option value="1">1</option>
+        </select>
+        <button onclick="applyClockPulse()">Apply Clock Pulse</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], currentState = '000', movingBall;
+        const stateTable = {
+            '000': { '0': { next: '000', y: 0 }, '1': { next: '001', y: 0 } },
+            '001': { '0': { next: '010', y: 0 }, '1': { next: '011', y: 0 } },
+            '010': { '0': { next: '001', y: 0 }, '1': { next: '010', y: 0 } },
+            '011': { '0': { next: '011', y: 1 }, '1': { next: '111', y: 0 } },
+            '100': { '0': { next: '100', y: 0 }, '1': { next: '101', y: 0 } },
+            '101': { '0': { next: '110', y: 0 }, '1': { next: '111', y: 1 } },
+            '110': { '0': { next: '100', y: 0 }, '1': { next: '101', y: 0 } },
+            '111': { '0': { next: '111', y: 0 }, '1': { next: '000', y: 0 } }
+        };
+        let statePositions = [
+            { x: 0, y: 4, z: 0, state: '000' },
+            { x: 3, y: 3, z: 0, state: '001' },
+            { x: 4, y: 0, z: 0, state: '010' },
+            { x: 3, y: -3, z: 0, state: '011' },
+            { x: 0, y: -4, z: 0, state: '100' },
+            { x: -3, y: -3, z: 0, state: '101' },
+            { x: -4, y: 0, z: 0, state: '110' },
+            { x: -3, y: 3, z: 0, state: '111' }
+        ];
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            let ambientLight = new THREE.AmbientLight(0x404040);
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(ambientLight, directionalLight);
+
+            statePositions.forEach(pos => createStateBall(pos));
+            createMovingBall();
+
+            camera.position.z = 12;
+            animate();
+        }
+
+        function createStateBall(position) {
+            let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            let material = new THREE.MeshStandardMaterial({ color: 0x808080 });
+            let sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(position.x, position.y, position.z);
+            sphere.userData = { state: position.state };
+            scene.add(sphere);
+            balls.push(sphere);
+        }
+
+        function createMovingBall() {
+            let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            let material = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+            movingBall = new THREE.Mesh(geometry, material);
+            movingBall.position.set(6, 0, 0);
+            scene.add(movingBall);
+        }
+
+        function applyClockPulse() {
+            let xValue = document.getElementById('x-value').value;
+            let nextState = stateTable[currentState][xValue].next;
+            let yOutput = stateTable[currentState][xValue].y;
+
+            balls.forEach(ball => {
+                if (ball.userData.state === nextState) {
+                    ball.material.color.set(0x000000); // Turn next state ball black
+                } else {
+                    ball.material.color.set(0x808080); // Reset others
+                }
+            });
+
+            if (yOutput === 1) {
+                movingBall.material.color.set(0xffff00); // Turn y ball yellow
+            } else {
+                movingBall.material.color.set(0xff00ff); // Reset y ball color
+            }
+
+            currentState = nextState;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html> -->
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Clock and X Selector</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        button, select {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <label for="x-value">Select X Value:</label>
+        <select id="x-value">
+            <option value="0">0</option>
+            <option value="1">1</option>
+        </select>
+        <button onclick="applyClockPulse()">Apply Clock Pulse</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], currentStateIndex = 0, movingBall;
+        let sequenceX0 = [0, 0, 2, 1, 3, 4, 6, 4, 7];
+        let sequenceX1 = [0, 1, 3, 2, 7, 5, 7, 5, 0];
+        let currentSequence = sequenceX0;
+        let yBallTriggeredStates = [7];
+        let ballColors = {
+            default: 0x808080, // Gray
+            active: 0x000000, // Black
+            moving: 0xff00ff, // Magenta (moving ball)
+            yTrigger: 0xffff00 // Yellow
+        };
+
+        let statePositions = [
+            { x: 0, y: 4, z: 0 }, // State 0
+            { x: 3, y: 3, z: 0 }, // State 1
+            { x: 4, y: 0, z: 0 }, // State 2
+            { x: 3, y: -3, z: 0 }, // State 3
+            { x: 0, y: -4, z: 0 }, // State 4
+            { x: -3, y: -3, z: 0 }, // State 5
+            { x: -4, y: 0, z: 0 }, // State 6
+            { x: -3, y: 3, z: 0 }  // State 7
+        ];
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            let ambientLight = new THREE.AmbientLight(0x404040);
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(ambientLight, directionalLight);
+
+            statePositions.forEach((pos, index) => createStateBall(pos, index));
+            createMovingBall();
+
+            camera.position.z = 12;
+            animate();
+        }
+
+        function createStateBall(position, state) {
+            let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            let material = new THREE.MeshStandardMaterial({ color: ballColors.default });
+            let sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(position.x, position.y, position.z);
+            sphere.userData = { state: state };
+            scene.add(sphere);
+            balls.push(sphere);
+        }
+
+        function createMovingBall() {
+            let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            let material = new THREE.MeshStandardMaterial({ color: ballColors.moving });
+            movingBall = new THREE.Mesh(geometry, material);
+            movingBall.position.set(statePositions[0].x, statePositions[0].y, 0);
+            scene.add(movingBall);
+        }
+
+        function applyClockPulse() {
+            let xValue = document.getElementById('x-value').value;
+            currentSequence = xValue === '0' ? sequenceX0 : sequenceX1;
+
+            let nextStateIndex = (currentStateIndex + 1) % currentSequence.length;
+            let nextState = currentSequence[nextStateIndex];
+
+            balls.forEach((ball, index) => {
+                ball.material.color.set(index === nextState ? ballColors.active : ballColors.default);
+            });
+
+            if (yBallTriggeredStates.includes(nextState)) {
+                movingBall.material.color.set(ballColors.yTrigger); // Turn moving ball yellow
+            } else {
+                movingBall.material.color.set(ballColors.moving); // Reset to magenta
+            }
+
+            movingBall.position.set(statePositions[nextState].x, statePositions[nextState].y, 0);
+            currentStateIndex = nextStateIndex;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html> -->
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Transitions</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="x-input">Input (x):</label>
+        <select id="x-input">
+            <option value="0">0</option>
+            <option value="1">1</option>
+        </select>
+        <button id="clock-pulse">Clock Pulse</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], arrows = [], movingBall;
+        let yellowBall;
+        let currentStateIndex = 0;
+        let statePositions = [
+            { x: 0, y: 4, z: 0, state: '000' },
+            { x: 3, y: 3, z: 0, state: '001' },
+            { x: 4, y: 0, z: 0, state: '010' },
+            { x: 3, y: -3, z: 0, state: '011' },
+            { x: 0, y: -4, z: 0, state: '100' },
+            { x: -3, y: -3, z: 0, state: '101' },
+            { x: -4, y: 0, z: 0, state: '110' },
+            { x: -3, y: 3, z: 0, state: '111' }
+        ];
+
+        // Transition map based on input x
+        const transitions = {
+            0: [0, 2, 1, 3, 4, 6, 4, 7],
+            1: [] // Add transitions for x = 1 if needed
+        };
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            let ambientLight = new THREE.AmbientLight(0x404040, 1);  // Ambient light
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);  // Directional light
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+
+            // Create the states as 3D spheres (balls)
+            statePositions.forEach((state, index) => {
+                let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                let material = new THREE.MeshStandardMaterial({
+                    color: getStateColor(state.state),
+                    transparent: true,
+                    opacity: 0.7
+                });
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(state.x, state.y, state.z);
+                sphere.userData = { state: state.state }; // Attach the state label
+                scene.add(sphere);
+                balls.push(sphere);  // Keep track of all balls
+                createStateLabel(state.x, state.y, state.state);  // Add state labels
+            });
+
+            // Set up the camera
+            camera.position.z = 12;
+
+            // Add event listeners
+            document.getElementById('clock-pulse').addEventListener('click', handleClockPulse);
+
+            // Render the scene
+            animate();
+        }
+
+        // Get color for the state
+        function getStateColor(state) {
+            switch (state) {
+                case '000': return 0x00ff00;
+                case '001': return 0x0000ff;
+                case '010': return 0xff0000;
+                case '011': return 0xffff00;
+                case '100': return 0x00ffff;
+                case '101': return 0xff00ff;
+                case '110': return 0xffffff;
+                case '111': return 0xffa500;
+                default: return 0x808080;
+            }
+        }
+
+        // Create the state label (write the state name directly on the ball)
+        function createStateLabel(x, y, state) {
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(state, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set(x - 0.2, y + 0.3, 0);
+                scene.add(textMesh);
+            });
+        }
+
+        // Create the yellow ball and move it along the specified states
+        function handleClockPulse() {
+            let xInput = parseInt(document.getElementById('x-input').value);
+            let path = transitions[xInput];
+
+            if (!path || path.length === 0) {
+                alert('No transitions defined for this input!');
+                return;
+            }
+
+            if (!yellowBall) {
+                let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                let material = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+                yellowBall = new THREE.Mesh(geometry, material);
+                scene.add(yellowBall);
+            }
+
+            let currentIndex = 0;
+
+            function moveToNextState() {
+                if (currentIndex >= path.length) return;
+
+                let targetState = balls[path[currentIndex]];
+                let { x, y, z } = targetState.position;
+                yellowBall.position.set(x, y, z);
+
+                currentIndex++;
+
+                if (currentIndex < path.length) {
+                    setTimeout(moveToNextState, 500); // Delay between moves
+                }
+            }
+
+            moveToNextState();
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Call the init function to set up the scene
+        init();
+    </script>
+</body>
+</html>
+ -->

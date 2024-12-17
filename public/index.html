@@ -1,0 +1,340 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Transitions</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], arrows = [];
+        let statePositions = [
+            { x: 0, y: 3, z: 0, state: '000' },
+            { x: 2.5, y: 2, z: 0, state: '001' },
+            { x: 3, y: 0, z: 0, state: '010' },
+            { x: 2.5, y: -2, z: 0, state: '011' },
+            { x: 0, y: -3, z: 0, state: '100' },
+            { x: -2.5, y: -2, z: 0, state: '101' },
+            { x: -3, y: 0, z: 0, state: '110' },
+            { x: -2.5, y: 2, z: 0, state: '111' }
+        ];
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            let ambientLight = new THREE.AmbientLight(0x404040, 1);  // Ambient light
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);  // Directional light
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+
+            // Create the states as 3D spheres (balls) and arrows
+            statePositions.forEach((state, index) => {
+                let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                let material = new THREE.MeshStandardMaterial({
+                    color: getStateColor(state.state),
+                    transparent: true,   // Make the ball slightly transparent
+                    opacity: 0.7         // Set opacity to 80%
+                });
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(state.x, state.y, state.z);
+                sphere.userData = { state: state.state }; // Attach the state label
+                scene.add(sphere);
+                balls.push(sphere);  // Keep track of all balls
+                createStateLabel(state.x, state.y, state.state);  // Add state labels
+            });
+
+            // Create arrows between states with transition conditions
+            createStateTransitions();
+
+            // Set up the camera
+            camera.position.z = 10;
+
+            // Render the scene
+            animate();
+        }
+
+        // Get color for the state (change according to your need)
+        function getStateColor(state) {
+            switch (state) {
+                case '000': return 0x00ff00;
+                case '001': return 0x0000ff;
+                case '010': return 0xff0000;
+                case '011': return 0xffff00;
+                case '100': return 0x00ffff;
+                case '101': return 0xff00ff;
+                case '110': return 0xffffff;
+                case '111': return 0xffa500;
+                default: return 0x808080;
+            }
+        }
+
+        // Create the state label (write the state name directly on the ball)
+        function createStateLabel(x, y, state) {
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(state, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set(x - 0.2, y + 0.3, 0);  // Adjust text position
+                scene.add(textMesh);
+            });
+        }
+
+        // Create arrows between different states with transition conditions (X/Y)
+        function createStateTransitions() {
+            let transitionData = [
+                { from: '000', to: '001', label: '0/0', x1: 0, y1: 3, x2: 2.5, y2: 2 },
+                { from: '001', to: '010', label: '0/0', x1: 2.5, y1: 2, x2: 3, y2: 0 },
+                { from: '010', to: '011', label: '0/0', x1: 3, y1: 0, x2: 2.5, y2: -2 },
+                { from: '011', to: '100', label: '0/0', x1: 2.5, y1: -2, x2: 0, y2: -3 },
+                { from: '100', to: '101', label: '0/0', x1: 0, y1: -3, x2: -2.5, y2: -2 },
+                { from: '101', to: '110', label: '0/0', x1: -2.5, y1: -2, x2: -3, y2: 0 },
+                { from: '110', to: '111', label: '0/0', x1: -3, y1: 0, x2: -2.5, y2: 2 },
+                { from: '111', to: '000', label: '0/0', x1: -2.5, y1: 2, x2: 0, y2: 3 },
+                { from: '000', to: '000', label: '1/0', x1: 0, y1: 3, x2: 0, y2: 3 },
+                { from: '011', to: '011', label: '1/0', x1: 2.5, y1: -2, x2: 2.5, y2: -2 },
+                { from: '111', to: '111', label: '1/0', x1: -2.5, y1: 2, x2: -2.5, y2: 2 }
+            ];
+
+            transitionData.forEach(transition => {
+                createArrow(transition.x1, transition.y1, transition.x2, transition.y2, transition.label);
+            });
+        }
+
+        // Create an arrow between two points with transition label
+        function createArrow(x1, y1, x2, y2, label) {
+            let points = [
+                new THREE.Vector3(x1, y1, 0),
+                new THREE.Vector3(x2, y2, 0)
+            ];
+            let geometry = new THREE.BufferGeometry().setFromPoints(points);
+            let material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+            let line = new THREE.Line(geometry, material);
+            scene.add(line);
+
+            // Add label to the arrow
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(label, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set((x1 + x2) / 2 - 0.5, (y1 + y2) / 2 + 0.5, 0);
+                scene.add(textMesh);
+            });
+        }
+
+        // Render the scene
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Initialize everything
+        init();
+    </script>
+</body>
+</html>
+`` -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State Diagram with Transitions</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, balls = [], arrows = [];
+        let statePositions = [
+            { x: 0, y: 4, z: 0, state: '000' },  // Increased y position for spacing
+            { x: 3, y: 3, z: 0, state: '001' },
+            { x: 4, y: 0, z: 0, state: '010' },
+            { x: 3, y: -3, z: 0, state: '011' },
+            { x: 0, y: -4, z: 0, state: '100' },
+            { x: -3, y: -3, z: 0, state: '101' },
+            { x: -4, y: 0, z: 0, state: '110' },
+            { x: -3, y: 3, z: 0, state: '111' }
+        ];
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            let ambientLight = new THREE.AmbientLight(0x404040, 1);  // Ambient light
+            let directionalLight = new THREE.DirectionalLight(0xffffff, 1);  // Directional light
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+
+            // Create the states as 3D spheres (balls) and arrows
+            statePositions.forEach((state, index) => {
+                let geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                let material = new THREE.MeshStandardMaterial({
+                    color: getStateColor(state.state),
+                    transparent: true,   // Make the ball slightly transparent
+                    opacity: 0.7         // Set opacity to 80%
+                });
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(state.x, state.y, state.z);
+                sphere.userData = { state: state.state }; // Attach the state label
+                scene.add(sphere);
+                balls.push(sphere);  // Keep track of all balls
+                createStateLabel(state.x, state.y, state.state);  // Add state labels
+
+                // Create a self-loop (circular loop above each ball)
+                createSelfLoop(state.x, state.y, state.z);
+            });
+
+            // Create arrows between states with transition conditions
+            createStateTransitions();
+
+            // Set up the camera
+            camera.position.z = 12;  // Adjusted camera position
+
+            // Render the scene
+            animate();
+        }
+
+        // Get color for the state (change according to your need)
+        function getStateColor(state) {
+            switch (state) {
+                case '000': return 0x00ff00;
+                case '001': return 0x0000ff;
+                case '010': return 0xff0000;
+                case '011': return 0xffff00;
+                case '100': return 0x00ffff;
+                case '101': return 0xff00ff;
+                case '110': return 0xffffff;
+                case '111': return 0xffa500;
+                default: return 0x808080;
+            }
+        }
+
+        // Create the state label (write the state name directly on the ball)
+        function createStateLabel(x, y, state) {
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(state, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set(x - 0.2, y + 0.3, 0);  // Adjust text position
+                scene.add(textMesh);
+            });
+        }
+
+        // Create a self-loop (circular loop above the ball)
+        function createSelfLoop(x, y, z) {
+            let curve = new THREE.EllipseCurve(
+                x, y + 1, 1, 1, 0, Math.PI * 2,  // The loop is above the ball (y + 1)
+                false, 0  // Clockwise, no rotation
+            );
+
+            let points = curve.getPoints(50);
+            let geometry = new THREE.BufferGeometry().setFromPoints(points);
+            let material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            let line = new THREE.LineLoop(geometry, material);
+            scene.add(line);
+        }
+
+        // Create arrows between different states with transition conditions (X/Y)
+        function createStateTransitions() {
+            let transitionData = [
+                { from: '000', to: '001', label: '0/0', x1: 0, y1: 4, x2: 3, y2: 3 },
+                { from: '001', to: '010', label: '0/0', x1: 3, y1: 3, x2: 4, y2: 0 },
+                { from: '010', to: '011', label: '0/0', x1: 4, y1: 0, x2: 3, y2: -3 },
+                { from: '011', to: '100', label: '0/0', x1: 3, y1: -3, x2: 0, y2: -4 },
+                { from: '100', to: '101', label: '0/0', x1: 0, y1: -4, x2: -3, y2: -3 },
+                { from: '101', to: '110', label: '0/0', x1: -3, y1: -3, x2: -4, y2: 0 },
+                { from: '110', to: '111', label: '0/0', x1: -4, y1: 0, x2: -3, y2: 3 },
+                { from: '111', to: '000', label: '0/0', x1: -3, y1: 3, x2: 0, y2: 4 },
+                { from: '000', to: '000', label: '1/0', x1: 0, y1: 4, x2: 0, y2: 4 },
+                { from: '011', to: '011', label: '1/0', x1: 3, y1: -3, x2: 3, y2: -3 },
+                { from: '111', to: '111', label: '1/0', x1: -3, y1: 3, x2: -3, y2: 3 }
+            ];
+
+            transitionData.forEach(transition => {
+                createArrow(transition.x1, transition.y1, transition.x2, transition.y2, transition.label);
+            });
+        }
+
+        // Create an arrow between two points with transition label
+        function createArrow(x1, y1, x2, y2, label) {
+            let points = [
+                new THREE.Vector3(x1, y1, 0),
+                new THREE.Vector3(x2, y2, 0)
+            ];
+            let geometry = new THREE.BufferGeometry().setFromPoints(points);
+            let material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+            let line = new THREE.Line(geometry, material);
+            scene.add(line);
+
+            // Add label to the arrow
+            let loader = new THREE.FontLoader();
+            loader.load('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/fonts/helvetiker_regular.typeface.json', function (font) {
+                let textGeometry = new THREE.TextGeometry(label, {
+                    font: font,
+                    size: 0.4,
+                    height: 0.1
+                });
+                let textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textMesh.position.set((x1 + x2) / 2 - 0.5, (y1 + y2) / 2 + 0.5, 0);
+                scene.add(textMesh);
+            });
+        }
+
+        // Render the scene
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Initialize everything
+        init();
+    </script>
+</body>
+</html>
